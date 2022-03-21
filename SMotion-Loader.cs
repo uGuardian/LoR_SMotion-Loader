@@ -13,8 +13,10 @@ using System.Reflection;
 using System.IO;
 using HarmonyLib;
 using UnityEngine;
+#if BepInEx
 using BepInEx;
 using BepInEx.Harmony;
+#endif
 using Mod;
 using Workshop;
 using UI;
@@ -23,8 +25,9 @@ using System.Xml.Serialization;
 namespace SMotionLoader
 {
 	public static class Globals {
-		public const string Version = "1.1.0";
+		public const string Version = "1.1.1";
 	}
+	#if BepInEx
 	[BepInPlugin("LoR.uGuardian.SMotionLoader", "SMotion-Loader", SMotionLoader.Globals.Version)]
 	public class SMotionLoader_BepInEx : BaseUnityPlugin {
 		public static bool BepInEx = false;
@@ -37,6 +40,7 @@ namespace SMotionLoader
 		}
 		#pragma warning restore IDE0051
 	}
+	#endif
 	public class SMotionLoader_Vanilla : ModInitializer
 	{
 		public override void OnInitializeMod() {
