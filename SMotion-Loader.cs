@@ -25,7 +25,7 @@ using System.Xml.Serialization;
 namespace SMotionLoader
 {
 	public static class Globals {
-		public const string Version = "1.1.1";
+		public const string Version = "1.2.0";
 	}
 	#if BepInEx
 	[BepInPlugin("LoR.uGuardian.SMotionLoader", "SMotion-Loader", SMotionLoader.Globals.Version)]
@@ -43,6 +43,7 @@ namespace SMotionLoader
 	#endif
 	public class SMotionLoader_Vanilla : ModInitializer
 	{
+		#if !BepInEx
 		public override void OnInitializeMod() {
 			if (Harmony.HasAnyPatches("LoR.uGuardian.SMotionLoader")) {
 				if (Singleton<ModContentManager>.Instance.GetErrorLogs()
@@ -53,8 +54,8 @@ namespace SMotionLoader
 				foreach (var assembly2 in AppDomain.CurrentDomain.GetAssemblies()
 					.Where(a => a.GetName().Name == Assembly.GetExecutingAssembly().GetName().Name)) {
 						if (thisVersion > assembly2.GetName().Version
-							&& (bool)assembly2.GetType("SMotionLoader.SMotionLoader_BepInEx")
-								.GetField("BepInEx", BindingFlags.Static | BindingFlags.Public).GetValue(null)) {
+							&& (bool)assembly2.GetType("SMotionLoader.SMotionLoader_BepInEx")?
+								.GetField("BepInEx", BindingFlags.Static | BindingFlags.Public)?.GetValue(null)) {
 									Singleton<ModContentManager>.Instance.AddErrorLog("BepInEx version of SMotion-Loader is outdated, please update!");
 						}
 				}
@@ -70,6 +71,7 @@ namespace SMotionLoader
 			ErrorRemoval:
 			Singleton<ModContentManager>.Instance.GetErrorLogs().RemoveAll(x => dllList.Any(x.Contains));
 		}
+		#endif
 		const string exists = "The same assembly name already exists. : "; 
 		public readonly List<string> dllList = new List<string> {
 			exists+"0Harmony",
@@ -218,121 +220,136 @@ namespace SMotionLoader
 			return Task.CompletedTask;
 		}
 		public static void EntryFix(WorkshopSkinDataSetter Instance, CharacterAppearance appearance) {
-			#if StopWatch
-			var stopWatch = System.Diagnostics.Stopwatch.StartNew();
-			#endif
-			CharacterMotion genericMotion = GetGenericMotion(appearance);
-			#if TranspilerDebug
+			try {
 				#if StopWatch
-				stopWatch.Stop();
+				var stopWatch = System.Diagnostics.Stopwatch.StartNew();
 				#endif
-			Debug.Log("Dictionary Check Start");
-				#if StopWatch
-				stopWatch.Start();
-				#endif
-			#endif
-			var newDic = new Dictionary<ActionDetail, ClothCustomizeData>(Instance.dic);
-			var empties = new HashSet<ActionDetail>();
-			foreach (var entry in newDic) {
-				// empties.Remove(entry.Key);
-			}
-			foreach (var motion in appearance._motionList) {
-				if (newDic.Remove(motion.actionDetail)) {
-					#if TranspilerDebug
-						#if StopWatch
-						stopWatch.Stop();
-						#endif
-					Debug.Log(motion.actionDetail);
-						#if StopWatch
-						stopWatch.Start();
-						#endif
-					#endif
-				}
-				else {
-					empties.Add(motion.actionDetail);
-					#if TranspilerDebug
-						#if StopWatch
-						stopWatch.Stop();
-						#endif
-					if (motion.actionDetail != ActionDetail.Standing) {
-						Debug.LogWarning(motion.actionDetail);
-					} else {
-						Debug.Log(motion.actionDetail);
-					}
-						#if StopWatch
-						stopWatch.Start();
-						#endif
-					#endif
-				}
-			}
-			#if TranspilerDebug
-				#if StopWatch
-				stopWatch.Stop();
-				#endif
-			Debug.Log("Dictionary Check End");
-				#if StopWatch
-				stopWatch.Start();
-				#endif
-			#endif
-			foreach (var entry in newDic) {
-				var action = entry.Key;
+				CharacterMotion genericMotion = GetGenericMotion(appearance);
 				#if TranspilerDebug
 					#if StopWatch
 					stopWatch.Stop();
 					#endif
-				Debug.LogWarning(action);
+				Debug.Log("Dictionary Check Start");
 					#if StopWatch
 					stopWatch.Start();
 					#endif
 				#endif
-				var motion = UnityEngine.Object.Instantiate(genericMotion, genericMotion.transform.parent);
-				motion.name = "Custom_"+Enum.GetName(typeof(ActionDetail), action);
-				motion.actionDetail = action;
-				appearance._motionList.Add(motion);
-			}
-			// Checks to see if a mod has preemptively added Character Motions.
-			foreach (var motion in appearance.CharacterMotions.Keys) {
-				if (empties.Remove(motion)) {
-					Debug.LogWarning($"SMotion-Loader: Motion {motion} was already defined by something else");
+				var newDic = new Dictionary<ActionDetail, ClothCustomizeData>(Instance.dic);
+				var empties = new HashSet<ActionDetail>();
+				foreach (var entry in newDic) {
+					// empties.Remove(entry.Key);
 				}
-			}
-			// Sets all empty basic actions to use Penetrate, as generally handled by the base game.
-			foreach (var action in empties) {
-				if (action == ActionDetail.NONE || action == ActionDetail.Standing) {
-					continue;
+				foreach (var motion in appearance._motionList) {
+					if (newDic.Remove(motion.actionDetail)) {
+						#if TranspilerDebug
+							#if StopWatch
+							stopWatch.Stop();
+							#endif
+						Debug.Log(motion.actionDetail);
+							#if StopWatch
+							stopWatch.Start();
+							#endif
+						#endif
+					}
+					else {
+						empties.Add(motion.actionDetail);
+						#if TranspilerDebug
+							#if StopWatch
+							stopWatch.Stop();
+							#endif
+						if (motion.actionDetail != ActionDetail.Standing) {
+							Debug.LogWarning(motion.actionDetail);
+						} else {
+							Debug.Log(motion.actionDetail);
+						}
+							#if StopWatch
+							stopWatch.Start();
+							#endif
+						#endif
+					}
 				}
-				appearance.CharacterMotions.Add(action, genericMotion);
+				#if TranspilerDebug
+					#if StopWatch
+					stopWatch.Stop();
+					#endif
+				Debug.Log("Dictionary Check End");
+					#if StopWatch
+					stopWatch.Start();
+					#endif
+				#endif
+				foreach (var entry in newDic) {
+					var action = entry.Key;
+					#if TranspilerDebug
+						#if StopWatch
+						stopWatch.Stop();
+						#endif
+					Debug.LogWarning(action);
+						#if StopWatch
+						stopWatch.Start();
+						#endif
+					#endif
+					var motion = UnityEngine.Object.Instantiate(genericMotion, genericMotion.transform.parent);
+					motion.name = "Custom_"+Enum.GetName(typeof(ActionDetail), action);
+					motion.actionDetail = action;
+					appearance._motionList.Add(motion);
+				}
+				// Checks to see if a mod has preemptively added Character Motions.
+				foreach (var motion in appearance.CharacterMotions.Keys) {
+					if (empties.Remove(motion)) {
+						Debug.LogWarning($"SMotion-Loader: Motion {motion} was already defined by something else");
+					}
+				}
+				// Sets all empty basic actions to use Penetrate, as generally handled by the base game.
+				foreach (var action in empties) {
+					if (action == ActionDetail.NONE || action == ActionDetail.Standing) {
+						continue;
+					}
+					appearance.CharacterMotions.Add(action, genericMotion);
+				}
+				#if StopWatch
+				stopWatch.Stop();
+				Debug.LogWarning(stopWatch.Elapsed);
+				Debug.LogWarning(stopWatch.ElapsedMilliseconds);
+				#endif
+			} catch (ArgumentNullException) {
+				Debug.LogWarning("SMotion-Loader: Current skin does not exist in dictionary, this is most likely caused by another mod handling skin loading differently");
+			} catch (NullReferenceException ex) {
+				Debug.LogError("SMotion-Loader: A variable was null, most likely the skin dictionary itself, please report this bug immediately!");
+				Debug.LogException(ex);
+			} catch (Exception ex) {
+				Debug.LogError("SMotion-Loader: Unknown exception");
+				Debug.LogException(ex);
 			}
-			#if StopWatch
-			stopWatch.Stop();
-			Debug.LogWarning(stopWatch.Elapsed);
-			Debug.LogWarning(stopWatch.ElapsedMilliseconds);
-			#endif
 		}
 		public static void InitPostfix(WorkshopSkinDataSetter __instance) {
-			var appearance = __instance.Appearance;
-			var empties = new List<ActionDetail>((ActionDetail[])Enum.GetValues(typeof(ActionDetail)));
-			foreach (var motion in __instance.Appearance.CharacterMotions) {
-				empties.Remove(motion.Key);
-			}
-			var genericMotion = GetGenericMotion(appearance);
-			foreach (var motion in empties) {
-				switch (motion) {
-					case ActionDetail.NONE:
-						break;
-					case ActionDetail.Slash2:
-						appearance.CharacterMotions.Add(motion, appearance.GetCharacterMotion(ActionDetail.Slash) ?? genericMotion);
-						break;
-					case ActionDetail.Penetrate2:
-						appearance.CharacterMotions.Add(motion, appearance.GetCharacterMotion(ActionDetail.Penetrate) ?? genericMotion);
-						break;
-					case ActionDetail.Hit2:
-						appearance.CharacterMotions.Add(motion, appearance.GetCharacterMotion(ActionDetail.Hit) ?? genericMotion);
-						break;
-					default:
-						appearance.CharacterMotions.Add(motion, genericMotion);
-						break;
+			try {
+				var appearance = __instance.Appearance;
+				var empties = new List<ActionDetail>((ActionDetail[])Enum.GetValues(typeof(ActionDetail)));
+				foreach (var motion in __instance.Appearance.CharacterMotions) {
+					empties.Remove(motion.Key);
 				}
+				var genericMotion = GetGenericMotion(appearance);
+				foreach (var motion in empties) {
+					switch (motion) {
+						case ActionDetail.NONE:
+							break;
+						case ActionDetail.Slash2:
+							appearance.CharacterMotions.Add(motion, appearance.GetCharacterMotion(ActionDetail.Slash) ?? genericMotion);
+							break;
+						case ActionDetail.Penetrate2:
+							appearance.CharacterMotions.Add(motion, appearance.GetCharacterMotion(ActionDetail.Penetrate) ?? genericMotion);
+							break;
+						case ActionDetail.Hit2:
+							appearance.CharacterMotions.Add(motion, appearance.GetCharacterMotion(ActionDetail.Hit) ?? genericMotion);
+							break;
+						default:
+							appearance.CharacterMotions.Add(motion, genericMotion);
+							break;
+					}
+				}
+			} catch (Exception ex) {
+				Debug.LogError("SMotion-Loader: Init Postfix Exception");
+				Debug.LogException(ex);
 			}
 		}
 		private static CharacterMotion GetGenericMotion(CharacterAppearance appearance) {
