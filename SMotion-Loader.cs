@@ -159,7 +159,7 @@ namespace SMotionLoader
 					#endif
 				}
 				foreach (var method in methods3) {
-					#if !NoAsyncAssembly.GetExecutingAssembly()
+					#if !NoAsync
 					tasks.Add(AsyncPatch(method, null, null, loadTranspiler, null, null));
 					#else
 					harmony.Patch(method, null, null, loadTranspiler, null, null);
