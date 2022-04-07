@@ -21,11 +21,12 @@ using Mod;
 using Workshop;
 using UI;
 using System.Xml.Serialization;
+using System.Collections.Concurrent;
 
 namespace SMotionLoader
 {
 	public static class Globals {
-		public const string Version = "1.2.0";
+		public const string Version = "1.3.0";
 	}
 	#if BepInEx
 	[BepInPlugin("LoR.uGuardian.SMotionLoader", "SMotion-Loader", SMotionLoader.Globals.Version)]
@@ -44,6 +45,7 @@ namespace SMotionLoader
 	public class SMotionLoader_Vanilla : ModInitializer
 	{
 		#if !BepInEx
+		public static readonly LogHandler logHandler = ((EntryScene)UnityEngine.Object.FindObjectOfType(typeof(EntryScene))).gameObject.AddComponent<LogHandler>();
 		public override void OnInitializeMod() {
 			if (Harmony.HasAnyPatches("LoR.uGuardian.SMotionLoader")) {
 				if (Singleton<ModContentManager>.Instance.GetErrorLogs()
@@ -54,20 +56,21 @@ namespace SMotionLoader
 				foreach (var assembly2 in AppDomain.CurrentDomain.GetAssemblies()
 					.Where(a => a.GetName().Name == Assembly.GetExecutingAssembly().GetName().Name)) {
 						if (thisVersion > assembly2.GetName().Version
-							&& (bool)assembly2.GetType("SMotionLoader.SMotionLoader_BepInEx")?
-								.GetField("BepInEx", BindingFlags.Static | BindingFlags.Public)?.GetValue(null)) {
+							&& ((bool?)assembly2.GetType("SMotionLoader.SMotionLoader_BepInEx")?
+								.GetField("BepInEx", BindingFlags.Static | BindingFlags.Public)?.GetValue(null)).GetValueOrDefault()) {
 									Singleton<ModContentManager>.Instance.AddErrorLog("BepInEx version of SMotion-Loader is outdated, please update!");
 						}
 				}
 				goto ErrorRemoval;
 			}
 			var currentAssembly = Assembly.GetExecutingAssembly();
-			var assembly = AppDomain.CurrentDomain.GetAssemblies()
-				.Where(a => a.GetName().Name == currentAssembly.GetName().Name)
-				.OrderByDescending(v => v.GetName().Version)
-				.First();
+			var loadedAssemblies = AppDomain.CurrentDomain.GetAssemblies()
+				.Where(a => a.GetName().Name == currentAssembly.GetName().Name);
+			var assembly = loadedAssemblies.OrderByDescending(v => v.GetName().Version).First();
+
 			Debug.Log($"SMotionLoader: Using Version {assembly.GetName().Version}");
-			assembly.GetType("SMotionLoader.SMotion_Patch").GetMethod(nameof(SMotion_Patch.Patch)).Invoke(null, new object[]{currentAssembly});
+			assembly.GetType("SMotionLoader.SMotion_Patch").GetMethod(nameof(SMotion_Patch.Patch))
+				.Invoke(null, new object[]{new V2Tuple(currentAssembly, loadedAssemblies, logHandler)});
 			ErrorRemoval:
 			Singleton<ModContentManager>.Instance.GetErrorLogs().RemoveAll(x => dllList.Any(x.Contains));
 		}
@@ -81,6 +84,9 @@ namespace SMotionLoader
 			exists+"1SMotion-Loader",
 		};
 	}
+	public class V2Tuple : Tuple<Assembly, IEnumerable<Assembly>, LogHandler> {
+		public V2Tuple(Assembly currentAssembly, IEnumerable<Assembly> loadedAssemblies, LogHandler logHandler) : base(currentAssembly, loadedAssemblies, logHandler) {}
+	}
 	public static class SMotion_Patch {
 		static readonly Harmony harmony = new Harmony("LoR.uGuardian.SMotionLoader");
 		public static void ErrorRemoval_BepInEx() {
@@ -90,6 +96,20 @@ namespace SMotionLoader
 		public static void ErrorRemoval_BepInEx_PostFix() {
 			Singleton<ModContentManager>.Instance.GetErrorLogs().RemoveAll(x => new SMotionLoader_Vanilla().dllList.Any(x.Contains));
 		}
+		#if !BepInEx
+		public static IEnumerable<LogHandler> GetHandlers() {
+			var currentAssembly = Assembly.GetExecutingAssembly();
+			var loadedAssemblies = AppDomain.CurrentDomain.GetAssemblies()
+				.Where(a => a.GetName().Name == currentAssembly.GetName().Name);
+			return GetHandlers(loadedAssemblies);
+		}
+		public static IEnumerable<LogHandler> GetHandlers(IEnumerable<Assembly> loadedAssemblies) {
+			var sceneObject = ((EntryScene)UnityEngine.Object.FindObjectOfType(typeof(EntryScene))).gameObject;
+			return loadedAssemblies.Select(a => a.GetType("SMotionLoader.SMotionLoader_Vanilla")?
+				.GetField(nameof(SMotionLoader_Vanilla.logHandler))?.GetValue(null) as LogHandler)
+				.Where(handler => handler != null).Distinct();
+		}
+		#endif
 		#if !NoAsync
 		public static async void Patch(object input) {
 		#else
@@ -139,7 +159,7 @@ namespace SMotionLoader
 					#endif
 				}
 				foreach (var method in methods3) {
-					#if !NoAsync
+					#if !NoAsyncAssembly.GetExecutingAssembly()
 					tasks.Add(AsyncPatch(method, null, null, loadTranspiler, null, null));
 					#else
 					harmony.Patch(method, null, null, loadTranspiler, null, null);
@@ -161,22 +181,78 @@ namespace SMotionLoader
 			{
 				Singleton<ModContentManager>.Instance.AddErrorLog(ex);
 			}
+			#if !BepInEx
+			ParseInput(input);
+			#endif
+		}
+		#if !BepInEx
+		public static void ParseInput(object input) {
 			if (input == null) {
 				return;
 			}
-			if (input is Assembly currentAssembly) {
+			IEnumerable<LogHandler> handlers;
+			if (input is V2Tuple v2Tuple) {
 				try {
-					DirectoryInfo dirInfo = new System.IO.FileInfo(currentAssembly.Location).Directory.Parent;
-					var files = dirInfo.EnumerateFiles("StageModInfo.xml");
-					while (files.FirstOrDefault() == null) {
-						dirInfo = dirInfo.Parent;
-						files = dirInfo.EnumerateFiles("StageModInfo.xml");
+					v2Tuple.Deconstruct(out var currentAssembly2, out var loadedAssemblies2, out var logHandler2);
+					handlers = GetHandlers(loadedAssemblies2).SkipWhile(handler => handler == logHandler2);
+					LogHandler currentHandler = logHandler2;
+					int currentHandlerCount = currentHandler.SMotionAssemblies.Count();
+					foreach (var handler in handlers) {
+						int count = handler.SMotionAssemblies.Count();
+						if (count > currentHandlerCount) {
+							currentHandler = handler;
+							currentHandlerCount = count;
+						}
 					}
-					Debug.Log("Reloading skins from calling mod");
-					LoadBookSkins(dirInfo, files.First());
+					IEnumerable<System.IO.FileInfo> assembliesList = currentHandler.SMotionAssemblies
+						.Append(new System.IO.FileInfo(currentAssembly2.Location));
+					var handlerAssembly = currentHandler.GetExecutingAssembly();
+					if (currentAssembly2 != handlerAssembly) {
+						assembliesList = assembliesList.Append(new System.IO.FileInfo(handlerAssembly.Location));
+					}
+					ReloadAllModSkins(assembliesList.Distinct());
 				} catch (Exception ex) {
 					Debug.LogException(ex);
 				}
+			}
+			if (input is Assembly currentAssembly) {
+				try {
+					Singleton<ModContentManager>.Instance.AddErrorLog($"SMotion-Loader {Assembly.GetExecutingAssembly().GetName().Version}: First Mod to initialize is using version {currentAssembly.GetName().Version}, any version lower than 1.3.0.0 can cause some skins to not load properly");
+					handlers = GetHandlers();
+					LogHandler currentHandler = handlers.First();
+					int currentHandlerCount = currentHandler.SMotionAssemblies.Count();
+					foreach (var handler in handlers) {
+						int count = handler.SMotionAssemblies.Count();
+						if (count > currentHandlerCount) {
+							currentHandler = handler;
+							currentHandlerCount = count;
+						}
+					}
+					IEnumerable<System.IO.FileInfo> assembliesList = currentHandler.SMotionAssemblies
+						.Append(new System.IO.FileInfo(currentAssembly.Location));
+					if (currentAssembly != currentHandler.GetExecutingAssembly()) {
+						assembliesList = assembliesList.Append(new System.IO.FileInfo(currentHandler.GetExecutingAssembly().Location));
+					}
+					ReloadAllModSkins(assembliesList.Distinct());
+				} catch (Exception ex) {
+					Debug.LogException(ex);
+				}
+			}
+		}
+		#endif
+		public static void ReloadAllModSkins(IEnumerable<System.IO.FileInfo> assemblyInfos) {
+			Debug.Log("Reloading skins from all SMotion-Loader mods");
+			foreach (var assembly in assemblyInfos) {
+				#if DEBUG
+					Debug.Log(assembly.FullName);
+				#endif
+				DirectoryInfo dirInfo = assembly.Directory.Parent;
+				var files = dirInfo.EnumerateFiles("StageModInfo.xml");
+				while (files.FirstOrDefault() == null) {
+					dirInfo = dirInfo.Parent;
+					files = dirInfo.EnumerateFiles("StageModInfo.xml");
+				}
+				LoadBookSkins(dirInfo, files.First());
 			}
 		}
 		public static void LoadBookSkins(DirectoryInfo dirInfo, System.IO.FileInfo stageModInfo) {
@@ -201,7 +277,7 @@ namespace SMotionLoader
 					workshopAppearanceInfo.path = directories[index];
 					workshopAppearanceInfo.uniqueId = uniqueId;
 					workshopAppearanceInfo.bookName = str;
-					Debug.Log((object) ("workshop bookName : " + workshopAppearanceInfo.bookName));
+					Debug.Log("workshop bookName : " + workshopAppearanceInfo.bookName);
 					if (workshopAppearanceInfo.isClothCustom)
 						list.Add(new WorkshopSkinData()
 						{
