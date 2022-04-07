@@ -33,6 +33,7 @@ namespace SMotionLoader {
 
 		void OnDisable() {
 			Application.logMessageReceivedThreaded -= GetPids;
+			SMotionAssemblies.Clear();
 		}
 		void GetPids(string logString, string stackTrace, LogType type) {
 			if (type == LogType.Log && logString.Contains("1SMotion-Loader.dll") && logString.StartsWith("load : ")) {

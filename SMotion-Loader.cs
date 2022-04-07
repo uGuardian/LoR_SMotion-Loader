@@ -26,7 +26,7 @@ using System.Collections.Concurrent;
 namespace SMotionLoader
 {
 	public static class Globals {
-		public const string Version = "1.3.0";
+		public const string Version = "1.3.1";
 	}
 	#if BepInEx
 	[BepInPlugin("LoR.uGuardian.SMotionLoader", "SMotion-Loader", SMotionLoader.Globals.Version)]
