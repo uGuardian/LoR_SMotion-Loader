@@ -30,7 +30,6 @@ namespace SMotionLoader {
 		void OnEnable() {
 			Application.logMessageReceivedThreaded += GetPids;
 		}
-
 		void OnDisable() {
 			Application.logMessageReceivedThreaded -= GetPids;
 			SMotionAssemblies.Clear();
@@ -39,6 +38,9 @@ namespace SMotionLoader {
 			if (type == LogType.Log && logString.Contains("1SMotion-Loader.dll") && logString.StartsWith("load : ")) {
 				SMotionAssemblies.Add(new FileInfo(logString.Substring(7)));
 			}
+		}
+		public void StopLoggingSML() {
+			Application.logMessageReceivedThreaded -= GetPids;
 		}
 	}
 }
