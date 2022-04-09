@@ -695,7 +695,7 @@ namespace SMotionLoader
 		}
 
 		#if TranspilerDebug
-		public static void DebugPrint(List<CodeInstruction> codes) {
+			public static void DebugPrint(List<CodeInstruction> codes) {
 				Debug.LogWarning("Begin Method:");
 				int d = 0;
 				foreach (var code in codes) {
