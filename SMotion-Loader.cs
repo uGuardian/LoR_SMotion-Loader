@@ -22,6 +22,10 @@ using Workshop;
 using UI;
 using System.Xml.Serialization;
 using System.Collections.Concurrent;
+using System.Xml;
+#if BepInEx && Optimized && !NoAsync
+using SMotionLoader.LoadingOptimization;
+#endif
 
 namespace SMotionLoader
 {
@@ -45,7 +49,7 @@ namespace SMotionLoader
 	#endif
 	public static class Events {
 		// These are for public events for people to use.
-		public static event EventHandler OnSkinReloadingCompletion {
+		public static event Action OnSkinReloadingCompletion {
 			add {
 				AppDomain.CurrentDomain.GetAssemblies()
 					.Where(a => a.GetName().Name == Assembly.GetExecutingAssembly()
@@ -329,22 +333,22 @@ namespace SMotionLoader
 			}
 			lock (eventLock) {
 				eventInvoked = true;
-				OnSkinReloadingCompletion_Internal?.Invoke(null, EventArgs.Empty);
+				OnSkinReloadingCompletion_Internal?.Invoke();
 				OnSkinReloadingCompletion_Internal = null;
 			}
 		}
 		[Obsolete("Don't call this directly, use the event instead", true)]
-		public static void Add_OnSkinReloadingCompletion_Internal(EventHandler del) {
+		public static void Add_OnSkinReloadingCompletion_Internal(Action del) {
 			lock (eventLock) {
 				if (!eventInvoked) {
 					OnSkinReloadingCompletion_Internal += del;
 				} else {
-					del.Invoke(null, EventArgs.Empty);
+					del.Invoke();
 				}
 			}
 		}
 		[Obsolete("Don't call this directly, use the event instead", true)]
-		public static void Remove_OnSkinReloadingCompletion_Internal(EventHandler del) {
+		public static void Remove_OnSkinReloadingCompletion_Internal(Action del) {
 			lock (eventLock) {
 				if (!eventInvoked) {
 					OnSkinReloadingCompletion_Internal -= del;
@@ -353,7 +357,7 @@ namespace SMotionLoader
 		}
 		readonly static object eventLock = new object();
 		static bool eventInvoked = false;
-		private static event EventHandler OnSkinReloadingCompletion_Internal;
+		private static event Action OnSkinReloadingCompletion_Internal;
 		public static (string, IEnumerable<DirectoryInfo>) ReloadModSkinAsync(System.IO.FileInfo assembly) {
 			#if DEBUG
 				Debug.Log(assembly.FullName);
