@@ -23,9 +23,6 @@ using UI;
 using System.Xml.Serialization;
 using System.Collections.Concurrent;
 using System.Xml;
-#if BepInEx && Optimized && !NoAsync
-using SMotionLoader.LoadingOptimization;
-#endif
 
 namespace SMotionLoader
 {
