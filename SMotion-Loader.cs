@@ -26,7 +26,8 @@ using System.Collections.Concurrent;
 namespace SMotionLoader
 {
 	public static class Globals {
-		public const string Version = "1.4.0";
+		public const string Version = "1.4.1";
+		public const string sMotionPatchTypeName = nameof(SMotionLoader)+"."+nameof(SMotion_Patch);
 	}
 	#if BepInEx
 	[BepInPlugin("LoR.uGuardian.SMotionLoader", "SMotion-Loader", SMotionLoader.Globals.Version)]
@@ -42,6 +43,31 @@ namespace SMotionLoader
 		#pragma warning restore IDE0051
 	}
 	#endif
+	public static class Events {
+		// These are for public events for people to use.
+		public static event EventHandler OnSkinReloadingCompletion {
+			add {
+				AppDomain.CurrentDomain.GetAssemblies()
+					.Where(a => a.GetName().Name == Assembly.GetExecutingAssembly()
+					.GetName().Name)
+					.OrderByDescending(v => v.GetName().Version)
+					.First()
+					.GetType(Globals.sMotionPatchTypeName)
+					.GetMethod(nameof(SMotion_Patch.Add_OnSkinReloadingCompletion_Internal))
+					.Invoke(null, new object[] {value});
+			}
+			remove {
+				AppDomain.CurrentDomain.GetAssemblies()
+					.Where(a => a.GetName().Name == Assembly.GetExecutingAssembly()
+					.GetName().Name)
+					.OrderByDescending(v => v.GetName().Version)
+					.First()
+					.GetType(Globals.sMotionPatchTypeName)
+					.GetMethod(nameof(SMotion_Patch.Remove_OnSkinReloadingCompletion_Internal))
+					.Invoke(null, new object[] {value});
+			}
+		}
+	}
 	public class SMotionLoader_Vanilla : ModInitializer
 	{
 		#if !BepInEx
@@ -69,7 +95,7 @@ namespace SMotionLoader
 			var assembly = loadedAssemblies.OrderByDescending(v => v.GetName().Version).First();
 
 			Debug.Log($"SMotionLoader: Using Version {assembly.GetName().Version}");
-			assembly.GetType("SMotionLoader.SMotion_Patch").GetMethod(nameof(SMotion_Patch.Patch))
+			assembly.GetType(Globals.sMotionPatchTypeName).GetMethod(nameof(SMotion_Patch.Patch))
 				.Invoke(null, new object[]
 					{new Tuple<Assembly, IEnumerable<Assembly>>(currentAssembly, loadedAssemblies)});
 			ErrorRemoval:
@@ -122,10 +148,9 @@ namespace SMotionLoader
 		#else
 		public static void ExecutePatch() {
 		#endif
-			try
-			{
+			try {
 				var tasks = new List<Task>();
-				var patch = new HarmonyMethod(typeof(SMotion_Patch).GetMethod("Transpiler"));
+				var patch = new HarmonyMethod(typeof(SMotion_Patch).GetMethod(nameof(Transpiler)));
 				#if !NoAsync
 				Debug.Log("SMotionLoader: Waiting for async transpilers...");
 				tasks.Add(AsyncPatch(typeof(WorkshopAppearanceItemLoader).GetMethod("LoadCustomAppearanceInfo", AccessTools.all), null, null, patch, null, null));
@@ -296,13 +321,39 @@ namespace SMotionLoader
 				string log = $"Pid: {uniqueId} {{{Environment.NewLine}";
 				var resultList = result.ToList();
 				foreach (var entry in resultList) {
-					log += $"workshop bookName : {entry.dataName}{Environment.NewLine}";
+					log += $"	workshop bookName : {entry.dataName}{Environment.NewLine}";
 				}
 				log += "}";
 				Log(log);
 				Singleton<CustomizingBookSkinLoader>.Instance._bookSkinData[uniqueId] = resultList;
 			}
+			lock (eventLock) {
+				eventInvoked = true;
+				OnSkinReloadingCompletion_Internal?.Invoke(null, EventArgs.Empty);
+				OnSkinReloadingCompletion_Internal = null;
+			}
 		}
+		[Obsolete("Don't call this directly, use the event instead", true)]
+		public static void Add_OnSkinReloadingCompletion_Internal(EventHandler del) {
+			lock (eventLock) {
+				if (!eventInvoked) {
+					OnSkinReloadingCompletion_Internal += del;
+				} else {
+					del.Invoke(null, EventArgs.Empty);
+				}
+			}
+		}
+		[Obsolete("Don't call this directly, use the event instead", true)]
+		public static void Remove_OnSkinReloadingCompletion_Internal(EventHandler del) {
+			lock (eventLock) {
+				if (!eventInvoked) {
+					OnSkinReloadingCompletion_Internal -= del;
+				}
+			}
+		}
+		readonly static object eventLock = new object();
+		static bool eventInvoked = false;
+		private static event EventHandler OnSkinReloadingCompletion_Internal;
 		public static (string, IEnumerable<DirectoryInfo>) ReloadModSkinAsync(System.IO.FileInfo assembly) {
 			#if DEBUG
 				Debug.Log(assembly.FullName);
@@ -708,7 +759,7 @@ namespace SMotionLoader
 				}
 				Debug.Log("End Method");
 			}
-			static readonly List<CodeInstruction> highlight = new List<CodeInstruction>();
+			public static readonly List<CodeInstruction> highlight = new List<CodeInstruction>();
 		#endif
 	}
 }
