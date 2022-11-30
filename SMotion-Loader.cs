@@ -27,7 +27,7 @@ using System.Xml;
 namespace SMotionLoader
 {
 	public static class Globals {
-		public const string Version = "1.4.1";
+		public const string Version = "1.4.2";
 		public const string sMotionPatchTypeName = nameof(SMotionLoader)+"."+nameof(SMotion_Patch);
 	}
 	#if BepInEx
@@ -333,6 +333,7 @@ namespace SMotionLoader
 				OnSkinReloadingCompletion_Internal?.Invoke();
 				OnSkinReloadingCompletion_Internal = null;
 			}
+			// TODO Stop it from letting the game finish "loading" if SMotion-Loader isn't done yet.
 		}
 		[Obsolete("Don't call this directly, use the event instead", true)]
 		public static void Add_OnSkinReloadingCompletion_Internal(Action del) {
@@ -473,6 +474,10 @@ namespace SMotionLoader
 		}
 		public static void EntryFix(WorkshopSkinDataSetter Instance, CharacterAppearance appearance) {
 			try {
+				if (CheckIfOnlyDefault(appearance)) {
+					// Assumes the skin has been stripped and doesn't bother doing anything.
+					return;
+				}
 				#if StopWatch
 				var stopWatch = System.Diagnostics.Stopwatch.StartNew();
 				#endif
@@ -488,9 +493,6 @@ namespace SMotionLoader
 				#endif
 				var newDic = new Dictionary<ActionDetail, ClothCustomizeData>(Instance.dic);
 				var empties = new HashSet<ActionDetail>();
-				foreach (var entry in newDic) {
-					// empties.Remove(entry.Key);
-				}
 				foreach (var motion in appearance._motionList) {
 					if (newDic.Remove(motion.actionDetail)) {
 						#if TranspilerDebug
@@ -529,21 +531,25 @@ namespace SMotionLoader
 					stopWatch.Start();
 					#endif
 				#endif
-				foreach (var entry in newDic) {
-					var action = entry.Key;
-					#if TranspilerDebug
-						#if StopWatch
-						stopWatch.Stop();
+				if (genericMotion != null) {
+					foreach (var entry in newDic) {
+						var action = entry.Key;
+						#if TranspilerDebug
+							#if StopWatch
+							stopWatch.Stop();
+							#endif
+						Debug.LogWarning(action);
+							#if StopWatch
+							stopWatch.Start();
+							#endif
 						#endif
-					Debug.LogWarning(action);
-						#if StopWatch
-						stopWatch.Start();
-						#endif
-					#endif
-					var motion = UnityEngine.Object.Instantiate(genericMotion, genericMotion.transform.parent);
-					motion.name = "Custom_"+Enum.GetName(typeof(ActionDetail), action);
-					motion.actionDetail = action;
-					appearance._motionList.Add(motion);
+						var motion = UnityEngine.Object.Instantiate(genericMotion, genericMotion.transform.parent);
+						motion.name = "Custom_"+Enum.GetName(typeof(ActionDetail), action);
+						motion.actionDetail = action;
+						appearance._motionList.Add(motion);
+					}
+				} else if (newDic.Count > 0) {
+					UnityEngine.Debug.LogError($"SMotion-Loader: Found no generic motion");
 				}
 				// Checks to see if a mod has preemptively added Character Motions.
 				foreach (var motion in appearance.CharacterMotions.Keys) {
@@ -564,7 +570,7 @@ namespace SMotionLoader
 				Debug.LogWarning(stopWatch.ElapsedMilliseconds);
 				#endif
 			} catch (ArgumentNullException) {
-				Debug.LogWarning("SMotion-Loader: Current skin does not exist in dictionary, this is most likely caused by another mod handling skin loading differently");
+				Debug.LogWarning("SMotion-Loader: Skin does not exist in dictionary, this is most likely caused by another mod handling skin loading differently");
 			} catch (NullReferenceException ex) {
 				Debug.LogError("SMotion-Loader: A variable was null, most likely the skin dictionary itself, please report this bug immediately!");
 				Debug.LogException(ex);
@@ -581,6 +587,10 @@ namespace SMotionLoader
 					empties.Remove(motion.Key);
 				}
 				var genericMotion = GetGenericMotion(appearance);
+				if (genericMotion == null) {
+					UnityEngine.Debug.Log("SMotion-Loader: No generic motion exists, cancelling Init Postfix");
+					return;
+				}
 				foreach (var motion in empties) {
 					switch (motion) {
 						case ActionDetail.NONE:
@@ -605,22 +615,31 @@ namespace SMotionLoader
 			}
 		}
 		private static CharacterMotion GetGenericMotion(CharacterAppearance appearance) {
-			// var genericMotion = appearance._motionList.Find((CharacterMotion x) => x.actionDetail == ActionDetail.Penetrate);
 			var genericMotion = appearance.GetCharacterMotion(ActionDetail.Penetrate);
 			if (genericMotion == null) {
-				Debug.LogError("Penetrate motion doesn't exist, the game uses this as a default for missing non-SMotions! Attempting to use Default motion...");
-				// genericMotion = appearance._motionList.Find((CharacterMotion x) => x.actionDetail == ActionDetail.Default);
+				// If only default motions exist, it assumes that the skin is stripped and doesn't bother logging anything.
+				if (!CheckIfOnlyDefault(appearance)) {
+					Debug.LogWarning("SMotion-Loader: Penetrate motion doesn't exist, the game uses this as a default for missing non-SMotions! Attempting to use Default motion...");
+				}
 				genericMotion = appearance.GetCharacterMotion(ActionDetail.Default);
 				if (genericMotion == null) {
-					Debug.LogError("Default motion not found, attempting to use Standing motion...");
-					// genericMotion = appearance._motionList.Find((CharacterMotion x) => x.actionDetail == ActionDetail.Standing);
+					Debug.LogWarning("SMotion-Loader: Default motion not found, attempting to use Standing motion...");
 					genericMotion = appearance.GetCharacterMotion(ActionDetail.Standing);
 					if (genericMotion == null) {
-						Debug.LogError("All normal defaults are missing, cancelling SMotion loading.");
+						Debug.LogError("SMotion-Loader: All normal motion defaults are missing.");
 					}
 				}
 			}
 			return genericMotion;
+		}
+
+		readonly static ActionDetail[] defaultDetails = new ActionDetail[] {
+			ActionDetail.Default,
+			ActionDetail.Standing,
+			ActionDetail.NONE,
+		};
+		static bool CheckIfOnlyDefault(CharacterAppearance appearance) {
+			return !appearance._motionList.Any(x => x != null && !defaultDetails.Contains(x.actionDetail));
 		}
 
 		public static IEnumerable<CodeInstruction> EntryTranspiler(IEnumerable<CodeInstruction> instructions) {
@@ -635,7 +654,7 @@ namespace SMotionLoader
 							codes[0],
 							codes[0],
 							codes[1],
-							CodeInstruction.Call(typeof(SMotion_Patch), "EntryFix"),
+							CodeInstruction.Call(typeof(SMotion_Patch), nameof(EntryFix)),
 						};
 						codes.InsertRange(i, newcodes);
 						#if TranspilerDebug
@@ -679,7 +698,7 @@ namespace SMotionLoader
 					&& codes[i].operand == "Prefabs/Characters/[Prefab]Appearance_Custom"
 					&& codes[i+1].opcode == OpCodes.Call) {
 						codes[i].opcode = OpCodes.Nop;
-						codes[i+1] = CodeInstruction.Call(typeof(SMotion_Patch), "PrefabReplacement");
+						codes[i+1] = CodeInstruction.Call(typeof(SMotion_Patch), nameof(PrefabReplacement));
 						Debug.Log("SMotionLoader: PrefabReplacement transpiler Successful");
 						#if TranspilerDebug
 							highlight.Add(codes[i]);
