@@ -27,7 +27,7 @@ using System.Xml;
 namespace SMotionLoader
 {
 	public static class Globals {
-		public const string Version = "1.4.2";
+		public const string Version = "1.4.3";
 		public const string sMotionPatchTypeName = nameof(SMotionLoader)+"."+nameof(SMotion_Patch);
 	}
 	#if BepInEx
@@ -354,7 +354,11 @@ namespace SMotionLoader
 			}
 		}
 		readonly static object eventLock = new object();
+		#if !BepInEx
 		static bool eventInvoked = false;
+		#else
+		static bool eventInvoked = true;
+		#endif
 		private static event Action OnSkinReloadingCompletion_Internal;
 		public static (string, IEnumerable<DirectoryInfo>) ReloadModSkinAsync(System.IO.FileInfo assembly) {
 			#if DEBUG
